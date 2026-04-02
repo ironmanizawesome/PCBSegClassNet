@@ -1,0 +1,30 @@
+# 생성된 마스크 및 평가 결과 (스크립트로 재생성 가능)
+data/masks/
+data/evaluation/
+
+# 루트에 있는 원본 이미지 (data/images/ 로 이동됨)
+leonardo\ (1).webp
+leonardo\ (2).webp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 가상환경
+venv/
+.venv/
+env/
+
+# Gerber 렌더링 임시 파일
+_tmp_gerber_render.png
+
+# IDE
+.vscode/
+*.swp

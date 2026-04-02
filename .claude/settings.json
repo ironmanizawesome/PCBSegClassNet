@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "intercept",
+            "command": "echo \"$TOOL_INPUT\" | python3 -c \"\nimport sys, json\ntry:\n    data = json.load(sys.stdin)\n    cmd = data.get('command', '')\n    dangerous = ['rm -rf /', 'rm -rf ~', 'rm -rf *', 'rm -rf .', ':(){', 'mkfs', 'dd if=', '> /dev/sd', 'chmod -R 777 /', 'curl|sh', 'wget|sh', 'curl|bash', 'wget|bash']\n    for d in dangerous:\n        if d in cmd:\n            print(f'BLOCKED: dangerous command detected: {d}')\n            sys.exit(1)\n    if 'rm -rf' in cmd and ('eagle/' in cmd or 'data/' in cmd or '.claude/' in cmd):\n        print(f'BLOCKED: rm -rf on protected directory')\n        sys.exit(1)\nexcept Exception as e:\n    pass\n\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(echo \"$TOOL_INPUT\" | python3 -c \"import sys,json; print(json.load(sys.stdin).get('file_path',''))\" 2>/dev/null); if [ -n \"$FILE\" ] && echo \"$FILE\" | grep -q '\\.py$'; then black --quiet --line-length 88 \"$FILE\" 2>/dev/null; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
