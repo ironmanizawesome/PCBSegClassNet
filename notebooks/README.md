@@ -18,7 +18,7 @@
 |---|---|
 | 1 | `nvidia-smi` GPU sanity |
 | 2 | Clone this repo (`colab` branch) |
-| 3 | Pin TF 2.10.1 + matching keras / protobuf / numpy (the codebase isn't compatible with Keras 3) |
+| 3 | Swap kernel to Python 3.10 base via `condacolab`, then pin TF 2.10.1 + matching keras / protobuf / numpy. Colab's default Python 3.12 has no TF 2.10 wheels, and this codebase isn't compatible with Keras 3 (TF 2.16+) |
 | 4 | Mount Drive, unzip `data.zip` to local Colab disk (≪ Drive in IO speed) |
 | 5 | Set up Drive checkpoint directory for persistence across sessions |
 | 6 | Segmentation training (5 epochs sanity → 100 epochs full → mirror checkpoint to Drive) |
