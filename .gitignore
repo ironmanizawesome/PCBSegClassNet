@@ -87,3 +87,9 @@ target/
 
 # Mypy cache
 .mypy_cache/
+
+# Claude Code working state
+.claude/
+
+# Training logs
+/logs/*.log
