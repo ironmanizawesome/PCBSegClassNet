@@ -27,7 +27,7 @@
 | 5 | `create_mask.py` — polygon masks + classification crops (EDSR super-resolution, GPU) |
 | 6 | `create_patches.py` — 768 px patches + 80/20 train/val split (CPU) |
 | 7 | Set up Drive checkpoint directory for persistence across sessions |
-| 8 | Segmentation training (5 epochs sanity → 40 epochs full → mirror checkpoint to Drive) |
+| 8 | Segmentation training (5 epochs sanity → 80 epochs full → mirror checkpoint to Drive) |
 | 9 | Classification training (same pattern) |
 | 10 | Optional: re-evaluate from Drive checkpoints in a fresh session |
 
@@ -60,9 +60,9 @@ The default `batch_size: 16` in `cfs/pscn_seg.yml` works on all Colab GPUs.
 
 The notebook runs:
 - **Sanity 5 epochs** before each full run, so you catch NaN losses or OOMs in <1 hour.
-- **Full 40 epochs** for both segmentation and classification.
+- **Full 80 epochs** for both segmentation and classification.
 
-40 + 40 ≈ 12 hours on a T4, which fits inside Colab Pro's 24 h session limit. If validation metrics are still improving at epoch 40, restore the best checkpoint and run more epochs (incremental training is supported by `-epoch`).
+80 + 80 ≈ 18 hours on an L4, fitting inside Colab Pro's 24 h session limit with margin. The original paper trained for 100 epochs; 80 leaves a safety buffer for the inevitable Drive-mount / preprocessing time at the start of a session. If you want closer to paper-faithful runs, push to 100 once you've seen one full run complete.
 
 ## Session persistence
 
