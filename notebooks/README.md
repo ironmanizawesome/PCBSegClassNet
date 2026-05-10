@@ -14,7 +14,7 @@
     ```
     https://colab.research.google.com/github/<your-fork>/PCBSegClassNet/blob/colab/notebooks/colab_train.ipynb
     ```
-4. **Runtime → Change runtime type → GPU**, then run cells top to bottom.
+4. **Runtime → Change runtime type → GPU** (T4 is enough; High-RAM not needed), then run cells top to bottom.
 
 ## What the notebook does
 
@@ -22,12 +22,12 @@
 |---|---|
 | 1 | `nvidia-smi` GPU sanity |
 | 2 | Clone this repo (`colab` branch) |
-| 3 | Swap kernel to Python 3.10 base via `condacolab`, then pin TF 2.10.1 + matching keras / protobuf / numpy. Colab's default Python 3.12 has no TF 2.10 wheels, and this codebase isn't compatible with Keras 3 (TF 2.16+) |
+| 3 | Install TF 2.15 + dependencies (TF 2.15 is the last release on Keras 2; Keras 3 from TF 2.16+ breaks this codebase's `tf.keras.backend.{dot,transpose}` calls) |
 | 4 | Mount Drive, unzip `data_raw.zip` to local Colab disk |
 | 5 | `create_mask.py` — polygon masks + classification crops (EDSR super-resolution, GPU) |
 | 6 | `create_patches.py` — 768 px patches + 80/20 train/val split (CPU) |
 | 7 | Set up Drive checkpoint directory for persistence across sessions |
-| 8 | Segmentation training (5 epochs sanity → 100 epochs full → mirror checkpoint to Drive) |
+| 8 | Segmentation training (5 epochs sanity → 40 epochs full → mirror checkpoint to Drive) |
 | 9 | Classification training (same pattern) |
 | 10 | Optional: re-evaluate from Drive checkpoints in a fresh session |
 
@@ -39,11 +39,11 @@
 
 If you already have a processed dataset zip, you can skip cells 5–6 and unzip it directly into `data/` instead.
 
-## Why TF 2.10 specifically?
+## Why TF 2.15?
 
-- This repo uses `tf.keras.activations.softmax(tensor)` and `tf.keras.backend.{dot,transpose}` patterns that broke in Keras 3.
-- TF 2.10 was the last release with native Windows GPU; verified to work end-to-end.
-- Colab's bundled TF (2.15+ with Keras 3) can produce `AttributeError`s on import without changes to the codebase.
+- This repo uses `tf.keras.backend.dot` / `backend.transpose` and `tf.keras.activations.softmax(tensor)` patterns that broke in Keras 3.
+- TF 2.15 is the **last TF release on Keras 2**; Keras 3 starts at TF 2.16.
+- Earlier this notebook tried to pin TF 2.10 via `condacolab`, but Colab's base Python keeps moving past 3.10 and TF 2.10's wheel matrix doesn't follow. TF 2.15 ships wheels for the Python versions Colab actually serves.
 
 ## VRAM notes
 
@@ -55,6 +55,14 @@ If you already have a processed dataset zip, you can skip cells 5–6 and unzip 
 | RTX 4060 Ti (8 GB) | 4-8 (and even 8 OOMs in this codebase due to SSIM gradient) |
 
 The default `batch_size: 16` in `cfs/pscn_seg.yml` works on all Colab GPUs.
+
+## Epoch budget
+
+The notebook runs:
+- **Sanity 5 epochs** before each full run, so you catch NaN losses or OOMs in <1 hour.
+- **Full 40 epochs** for both segmentation and classification.
+
+40 + 40 ≈ 12 hours on a T4, which fits inside Colab Pro's 24 h session limit. If validation metrics are still improving at epoch 40, restore the best checkpoint and run more epochs (incremental training is supported by `-epoch`).
 
 ## Session persistence
 
