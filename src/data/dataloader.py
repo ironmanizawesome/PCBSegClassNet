@@ -93,8 +93,26 @@ def get_paths(opt):
 
 
 class LoadSegData:
-    def __init__(self, opt):
+    def __init__(self, opt, augment=False):
         self.opt = opt
+        self.augment = augment
+
+    def augment_data(self, image, one_hot_map):
+        # geometric transforms must be applied identically to image and mask
+        if tf.random.uniform(()) > 0.5:
+            image = tf.image.flip_left_right(image)
+            one_hot_map = tf.image.flip_left_right(one_hot_map)
+        if tf.random.uniform(()) > 0.5:
+            image = tf.image.flip_up_down(image)
+            one_hot_map = tf.image.flip_up_down(one_hot_map)
+        k = tf.random.uniform((), minval=0, maxval=4, dtype=tf.int32)
+        image = tf.image.rot90(image, k)
+        one_hot_map = tf.image.rot90(one_hot_map, k)
+        # photometric transforms on the image only (mask is class labels)
+        image = tf.image.random_brightness(image, max_delta=0.1)
+        image = tf.image.random_contrast(image, lower=0.9, upper=1.1)
+        image = tf.clip_by_value(image, 0.0, 1.0)
+        return image, one_hot_map
 
     def parse_data(self, image, mask):
         # read the image from disk, decode it, convert the data type to
@@ -114,6 +132,9 @@ class LoadSegData:
             one_hot_map.append(class_map)
         one_hot_map = tf.stack(one_hot_map, axis=-1)
         one_hot_map = tf.cast(one_hot_map, tf.float32)
+
+        if self.augment:
+            image, one_hot_map = self.augment_data(image, one_hot_map)
 
         # return the image and the label
         return image, one_hot_map
@@ -137,9 +158,22 @@ class LoadSegData:
 
 
 class LoadClassData:
-    def __init__(self, opt, num_classes):
+    def __init__(self, opt, num_classes, augment=False):
         self.opt = opt
         self.num_classes = num_classes
+        self.augment = augment
+
+    def augment_data(self, image):
+        if tf.random.uniform(()) > 0.5:
+            image = tf.image.flip_left_right(image)
+        if tf.random.uniform(()) > 0.5:
+            image = tf.image.flip_up_down(image)
+        k = tf.random.uniform((), minval=0, maxval=4, dtype=tf.int32)
+        image = tf.image.rot90(image, k)
+        image = tf.image.random_brightness(image, max_delta=0.1)
+        image = tf.image.random_contrast(image, lower=0.9, upper=1.1)
+        image = tf.clip_by_value(image, 0.0, 1.0)
+        return image
 
     def parse_data(self, image, label):
         # read the image from disk, decode it, convert the data type to
@@ -149,7 +183,8 @@ class LoadClassData:
         image = tf.image.convert_image_dtype(image, dtype=tf.float32)
         image = tf.image.resize(image, (self.opt["img_size_h"], self.opt["img_size_w"]))
 
-        label = label
+        if self.augment:
+            image = self.augment_data(image)
 
         # return the image and the label
         return image, label
@@ -183,11 +218,11 @@ def get_data(opt):
     val_images, val_targets = get_paths(val_opt)
 
     if train_opt["type"] == "Segmentation":
-        train_data = LoadSegData(train_opt)
+        train_data = LoadSegData(train_opt, augment=True)
         trainDS = train_data.init(train_images, train_targets)
 
     elif train_opt["type"] == "Classification":
-        train_data = LoadClassData(train_opt, num_classes)
+        train_data = LoadClassData(train_opt, num_classes, augment=True)
         trainDS = train_data.init(train_images, train_targets)
 
     else:
@@ -196,11 +231,11 @@ def get_data(opt):
         ), f"Found data type as {train_opt['type']} but it should be one of Segmentation/Classification"
 
     if val_opt["type"] == "Segmentation":
-        val_data = LoadSegData(val_opt)
+        val_data = LoadSegData(val_opt, augment=False)
         valDS = val_data.init(val_images, val_targets)
 
     elif val_opt["type"] == "Classification":
-        val_data = LoadClassData(val_opt, num_classes)
+        val_data = LoadClassData(val_opt, num_classes, augment=False)
         valDS = val_data.init(val_images, val_targets)
 
     else:
