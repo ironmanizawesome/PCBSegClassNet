@@ -78,6 +78,11 @@ target/
 # exclude data from source control by default
 /data/
 
+# Arduino dataset (custom photos — kept on local disk / Drive only)
+/dataset/
+/dataset_png/
+/dataset_cropped/
+
 # Mac OS-specific storage files
 .DS_Store
 
