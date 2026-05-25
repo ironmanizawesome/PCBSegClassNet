@@ -83,6 +83,9 @@ target/
 /dataset_png/
 /dataset_cropped/
 
+# Board CAD files (Altium/EAGLE design files from Arduino docs — large, re-downloadable)
+/PCBfiles/
+
 # Mac OS-specific storage files
 .DS_Store
 
