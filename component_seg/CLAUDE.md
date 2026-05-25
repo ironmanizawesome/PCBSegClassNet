@@ -1,90 +1,73 @@
-# CLAUDE.md
+# CLAUDE.md (component_seg)
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+TF 2.x 기반 PCB 부품 segmentation/classification. PCBSegClassNet 코드베이스 + FPIC 25 클래스.
+프로젝트 맥락은 auto-memory의 `project_goal.md`, `monorepo_structure.md`, `arduino_dataset.md` 참조.
+아키텍처 상세는 `component_seg_architecture.md` 참조.
 
-## Project Overview
+## 작업 원칙 (영역 전용)
 
-PCBSegClassNet is a TensorFlow-based deep learning project for PCB (Printed Circuit Board) component segmentation and classification. It uses the FICS PCB Image Collection (FPIC) dataset.
+- **학습/평가 명령은 `component_seg/src/`에서 실행**: 모든 yml의 상대경로가 이 cwd 기준 (`../data/`, `../checkpoints/` 등).
+- **데이터 경로는 yml 내 상대경로 유지, 절대경로 박지 X**: Win native ↔ Colab 호환성 깨짐.
+- **mask 색상 정확히 유지**: `src/data/dataloader.py::color_values`와 mask 생성 코드의 RGB tuple이 1:1 일치 필수. 불일치 시 dataloader one-hot 인코딩 깨짐 (`tf.reduce_all(tf.equal(...))` 매칭 실패).
+- **Transfer learning은 `-resume` + 작은 lr (1e-5) 권장**: ModelCheckpoint reset 함정 인지 (상세 `training_baseline.md`).
+- **Classification crop 생성은 `super_resolution.h5` 필요**: 보유 X면 segmentation only로 진행. Arduino transfer learning은 segmentation only 시나리오에 해당.
 
-The two tasks are handled by separate model variants sharing the same encoder:
-- **Segmentation**: `PCBSegNet` — segments all 25 component classes on a full PCB image
-- **Classification**: `PCBClassNet` — classifies individual cropped component images
+## 명령어
 
-## Environment Setup
-
+학습 (100 epoch 기준):
 ```bash
-conda create -n pscn python=3.8
-conda activate pscn
-conda install pip
-pip install -r requirements.txt
-```
-
-Key dependencies: `tensorflow-gpu==2.11`, `albumentations`, `pyyaml`, `tqdm`, `pandas`.
-
-## Commands
-
-All training commands must be run from the `src/` directory.
-
-**Train segmentation** (100 epochs):
-```bash
+cd component_seg/src
 python train_segmentation.py -opt cfs/pscn_seg.yml -epoch 100
-```
-
-**Evaluate segmentation** (loads best checkpoint, skips training):
-```bash
-python train_segmentation.py -opt cfs/pscn_seg.yml -epoch 0
-```
-
-**Train classification** (100 epochs):
-```bash
 python train_classification.py -opt cfs/pscn_class.yml -epoch 100
 ```
 
-**Evaluate classification**:
+평가 (best checkpoint 로드, 학습 skip):
 ```bash
+python train_segmentation.py -opt cfs/pscn_seg.yml -epoch 0
 python train_classification.py -opt cfs/pscn_class.yml -epoch 0
 ```
 
-**Data preparation** (run from `src/data/`):
+Arduino fine-tune (transfer learning):
 ```bash
-# Create HSI+CLAHE images, masks, and classification crops
-python create_mask.py -i ../../data/pcb_image/ -a ../../data/smd_annotation/ -id ../../data/segmentation/images -ad ../../data/segmentation/masks -cd ../../data/classification/images/
-
-# Create patches (768px) and split train/test
-python create_patches.py -i ../../data/segmentation/images/ -m ../../data/segmentation/masks -cd ../../data/classification/images/ -ps 768
+python train_segmentation.py -opt cfs/pscn_seg_arduino.yml -resume -epoch N
 ```
 
-## Architecture
+FPIC 원본 데이터 처리 (`component_seg/src/data/`에서):
+```bash
+python create_mask.py -i ../../data/pcb_image/ -a ../../data/smd_annotation/ \
+       -id ../../data/segmentation/images -ad ../../data/segmentation/masks \
+       -cd ../../data/classification/images/
+python create_patches.py -i ../../data/segmentation/images/ \
+       -m ../../data/segmentation/masks -cd ../../data/classification/images/ -ps 768
+```
 
-### Encoder (shared by both tasks)
-Built in `src/models/blocks.py`, the encoder has three stages:
-1. **Learning Module** — three conv/depthwise-separable conv blocks with stride 2, producing feature maps at 3 scales (`learning_layer1`, `learning_layer2`, `learning_layer3`)
-2. **Feature Extractor** — three `bottleneck_block` stages (MobileNetV2-style residual bottlenecks) followed by a `pyramid_pooling_block` (PSPNet-style)
-3. **Fusion Module** — fuses the learning module output with the upsampled feature extractor output
-
-### Segmentation Decoder (`get_decoder` in `blocks.py`)
-- Applies `tem_block` (Texture Enhancement Module: channel attention + cosine-similarity-based spatial attention) to encoder output
-- Two upsampling steps with skip connections from `learning_layer2` and `learning_layer1`
-- Final `Conv2D(num_classes)` + softmax
-
-### Classification Head (`get_classification` in `blocks.py`)
-- `GlobalAveragePooling2D` on encoder output → `Dense(128, relu)` → `Dense(num_classes, softmax)`
-
-### Loss
-Segmentation uses **DISLoss** (`src/models/loss.py`): sum of Dice loss + Jaccard loss + SSIM loss. Classification uses standard `categorical_crossentropy`.
+Arduino annotation 파이프라인 (repo root에서):
+```bash
+# 1. CVAT COCO export → FPIC CSV (폴더 재귀 스캔)
+python component_seg/scripts/coco_to_fpic_csv.py \
+       -i component_seg/PCBannotations -o component_seg/data/annotations
+# 2. CSV + cropped 이미지 → 학습 데이터셋
+python component_seg/scripts/build_seg_dataset.py \
+       -a component_seg/data/annotations -i component_seg/dataset_cropped \
+       -o component_seg/data/segmentation_arduino -ps 768
+# 3. fine-tune (위 명령 참조)
+```
 
 ## Configuration
 
-Training hyperparameters and data paths are controlled by YAML files in `src/cfs/`:
-- `pscn_seg.yml` — segmentation config (25 classes, Adam lr=1e-4, batch=16, input 512×512)
-- `pscn_class.yml` — classification config (25 classes, Adam lr=1e-4, batch=16, input 512×512)
+YAML 위치: `component_seg/src/cfs/`
+- `pscn_seg.yml` — FPIC 25-class segmentation 기본 (Adam lr=1e-4, batch=16, input 512×512)
+- `pscn_seg_finetune.yml` — FPIC 추가 fine-tune용 (작은 lr)
+- `pscn_seg_arduino.yml` — Arduino transfer learning용 (batch=4)
+- `pscn_class.yml` — classification 기본
 
-Checkpoints are saved to `checkpoints/best_seg.h5` and `checkpoints/best_class.h5`. Logs go to `logs/app.log`.
+Checkpoint: `component_seg/checkpoints/best_seg.h5`, `best_class.h5`. 로그: `component_seg/logs/app.log`.
 
-## Data
+환경 셋업은 `env_setup.md` (Windows native) / `colab_setup.md` (Colab) 참조.
 
-25 PCB component classes: R, C, U, Q, J, L, RA, D, RN, TP, IC, P, CR, M, BTN, FB, CRA, SW, T, F, V, LED, S, QA, JP.
+## 영역 전용 금지사항
 
-The segmentation masks use specific RGB color values per class (defined in `src/data/dataloader.py::color_values`). When modifying mask generation, ensure colors match this mapping exactly.
-
-The FPIC dataset requires access codes from the dataset authors — it is not freely downloadable.
+- **`color_values` 임의 변경 X**: mask 생성 코드와 dataloader 간 동기화 자동화 안 됨. 변경 시 모든 mask 재생성 + 양쪽 갱신 필요.
+- **`mixed_float16` 적용 X**: 학습 첫 epoch부터 NaN 발생 (`mixed_precision_nan.md`).
+- **yml에 절대경로 박지 X**: Win native ↔ Colab 호환성 깨짐.
+- **로컬 GPU (4060 Ti 8GB)에서 fp32 학습 시도 X**: SSIM gradient backward가 VRAM 초과. Colab L4 24GB 이상 권장 (`vram_limit.md`).
