@@ -1,0 +1,79 @@
+# ------------------------------------------------------------------------
+# Arduino segmentation fine-tune config.
+# Use with -resume so best_seg.h5 (FPIC pretrain) is loaded first.
+# Data root: data/segmentation_arduino/, populated by
+# scripts/build_seg_dataset.py from the CVAT-derived CSVs.
+# ------------------------------------------------------------------------
+name: PCBSegClassNet
+model_type: SegmentationModel
+
+datasets:
+  train:
+    name: Arduino
+    type: Segmentation
+    data_images: ../data/segmentation_arduino/train/images/
+    data_masks: ../data/segmentation_arduino/train/masks/
+
+    img_size_h: 512
+    img_size_w: 512
+
+    use_shuffle: true
+    batch_size: 4         # small Arduino set, lower than FPIC's 16
+
+  val:
+    name: Arduino
+    type: Segmentation
+    data_images: ../data/segmentation_arduino/val/images/
+    data_masks: ../data/segmentation_arduino/val/masks/
+
+    img_size_h: 512
+    img_size_w: 512
+
+    use_shuffle: false
+    batch_size: 1
+
+path:
+  checkpoint_network: ../checkpoints/best_seg.h5
+  log_file: ../logs/app.log
+
+train:
+  optim:
+    type: Adam
+    lr: 0.00001          # 1e-5, same as pscn_seg_finetune.yml
+    betas: [0.9, 0.9]
+
+  callbacks:
+    modelcheckpoint:
+      type: ModelCheckpoint
+      monitor: val_dice_coef
+      mode: max
+      verbose: 1
+      save_best_only: true
+      save_weights_only: false
+
+    reducelronplateau:
+      type: ReduceLROnPlateau
+      monitor: val_loss
+      mode: min
+      verbose: 1
+      factor: 0.1
+      patience: 15
+      min_lr: 0.000001
+
+  num_classes: 25
+
+  loss:
+    type: DISLoss
+
+  metric:
+    DICE:
+      type: dice_coef
+    IoU:
+      type: jacard_coef
+
+val:
+  metric:
+    DICE:
+      type: DiceCoef
+    IoU:
+      type: IoU
