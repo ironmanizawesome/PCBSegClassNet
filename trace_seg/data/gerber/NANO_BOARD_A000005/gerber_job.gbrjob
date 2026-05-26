@@ -1,7 +1,7 @@
 {
     "Header": {
         "Comment": "All values are metric (mm)",
-        "CreationDate": "2026-04-02T19:44:21Z",
+        "CreationDate": "2026-05-26T17:59:36Z",
         "GenerationSoftware": {
             "Application": "EAGLE",
             "Vendor": "Autodesk",
@@ -13,12 +13,12 @@
         "BoardThickness": 1.57,
         "LayerNumber": 2,
         "Name": {
-            "ProjectId": "Leonardo_Rev3d"
+            "ProjectId": "NANO_BOARD_A000005"
         },
         "Owner": "  <ironmanizawesome@gmail.com>",
         "Size": {
-            "X": 68.58,
-            "Y": 53.34
+            "X": 43.18,
+            "Y": 17.78
         }
     }
 }
