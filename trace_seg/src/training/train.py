@@ -77,8 +77,9 @@ def save_predictions(model, dataset, device, out_dir):
 
 def split_samples(samples, args):
     if args.val_board:
-        val = [s for s in samples if s[2].split("/")[0] == args.val_board]
-        train = [s for s in samples if s[2].split("/")[0] != args.val_board]
+        vb = set(args.val_board.split(","))     # 쉼표로 여러 보드(같은 설계) 묶기
+        val = [s for s in samples if s[2].split("/")[0] in vb]
+        train = [s for s in samples if s[2].split("/")[0] not in vb]
     elif args.val_frac > 0:
         rng = np.random.default_rng(args.seed)
         idx = rng.permutation(len(samples))

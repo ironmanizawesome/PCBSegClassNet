@@ -50,18 +50,29 @@ class TraceDataset(Dataset):
     def __len__(self):
         return len(self.samples)
 
+    def _letterbox(self, img, pad_value, interp):
+        """비율 유지 리사이즈 + 중앙 패딩 (가로/세로 보드 왜곡 방지)."""
+        h, w = img.shape[:2]
+        s = self.size / max(h, w)
+        nh, nw = max(1, round(h * s)), max(1, round(w * s))
+        r = cv2.resize(img, (nw, nh), interpolation=interp)
+        top, left = (self.size - nh) // 2, (self.size - nw) // 2
+        return cv2.copyMakeBorder(r, top, self.size - nh - top,
+                                  left, self.size - nw - left,
+                                  cv2.BORDER_CONSTANT, value=pad_value)
+
     def _load_image(self, path):
         img = cv2.imread(str(path), cv2.IMREAD_COLOR)        # BGR
         if img is None:
             raise FileNotFoundError(f"이미지 로드 실패: {path}")
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        return cv2.resize(img, (self.size, self.size), interpolation=cv2.INTER_AREA)
+        return self._letterbox(img, (0, 0, 0), cv2.INTER_AREA)
 
     def _load_mask(self, path):
         m = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         if m is None:
             raise FileNotFoundError(f"마스크 로드 실패: {path}")
-        m = cv2.resize(m, (self.size, self.size), interpolation=cv2.INTER_NEAREST)
+        m = self._letterbox(m, 0, cv2.INTER_NEAREST)
         return (m > 127).astype(np.float32)
 
     def _color_jitter(self, img):
