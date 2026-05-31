@@ -64,16 +64,36 @@ class TraceDataset(Dataset):
         m = cv2.resize(m, (self.size, self.size), interpolation=cv2.INTER_NEAREST)
         return (m > 127).astype(np.float32)
 
+    def _color_jitter(self, img):
+        """밝기/대비/HSV 지터 (image만). photo<->web 색·조명 차이 흡수용."""
+        a = 1.0 + np.random.uniform(-0.2, 0.2)        # contrast
+        b = np.random.uniform(-20, 20)                # brightness
+        img = np.clip(a * img.astype(np.float32) + b, 0, 255).astype(np.uint8)
+        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype(np.float32)
+        hsv[..., 0] = (hsv[..., 0] + np.random.uniform(-10, 10)) % 180
+        hsv[..., 1] = np.clip(hsv[..., 1] * (1 + np.random.uniform(-0.3, 0.3)), 0, 255)
+        return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
+
+    def _augment(self, img, mask):
+        # geometric (image+mask 동일 적용)
+        if np.random.rand() < 0.5:
+            img, mask = img[:, ::-1], mask[:, ::-1]
+        if np.random.rand() < 0.5:
+            img, mask = img[::-1], mask[::-1]
+        k = np.random.randint(4)                      # rot90 x k (정사각 입력이라 형상 유지)
+        if k:
+            img, mask = np.rot90(img, k), np.rot90(mask, k)
+        # photometric (image만)
+        img = self._color_jitter(np.ascontiguousarray(img))
+        return img, np.ascontiguousarray(mask)
+
     def __getitem__(self, idx):
         img_path, mask_path, label = self.samples[idx]
         img = self._load_image(img_path)
         mask = self._load_mask(mask_path)
 
-        if self.augment:                # 단순 좌우/상하 플립 (overfit 시엔 off 권장)
-            if np.random.rand() < 0.5:
-                img, mask = img[:, ::-1], mask[:, ::-1]
-            if np.random.rand() < 0.5:
-                img, mask = img[::-1], mask[::-1]
+        if self.augment:
+            img, mask = self._augment(img, mask)
 
         img = np.ascontiguousarray(img, dtype=np.float32) / 255.0
         img = torch.from_numpy(img.transpose(2, 0, 1))       # (3,H,W)
