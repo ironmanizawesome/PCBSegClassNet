@@ -7,6 +7,7 @@ data/unet/
 # 사진 (직접촬영 + 웹, 대용량 — 로컬/Drive 보관, organize_photos.py로 재구성)
 data/images/
 data/images_unused/
+data/images_registered/
 
 # 루트에 있는 원본 이미지 (data/images/ 로 이동됨)
 leonardo\ (1).webp
