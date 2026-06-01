@@ -46,6 +46,7 @@ class TraceDataset(Dataset):
         self.samples = samples
         self.size = size
         self.augment = augment
+        self.p_rawify = 0.0          # rawify(폰사진 흉내)는 현 데이터(6설계)론 역효과 -> 기본 off
 
     def __len__(self):
         return len(self.samples)
@@ -65,15 +66,49 @@ class TraceDataset(Dataset):
         img = cv2.imread(str(path), cv2.IMREAD_COLOR)        # BGR
         if img is None:
             raise FileNotFoundError(f"이미지 로드 실패: {path}")
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        return self._letterbox(img, (0, 0, 0), cv2.INTER_AREA)
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)          # native RGB
 
     def _load_mask(self, path):
         m = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         if m is None:
             raise FileNotFoundError(f"마스크 로드 실패: {path}")
-        m = self._letterbox(m, 0, cv2.INTER_NEAREST)
-        return (m > 127).astype(np.float32)
+        return (m > 127).astype(np.float32)                 # native {0,1}
+
+    def _rawify(self, img, mask):
+        """정합(보드 꽉 찬) 이미지를 '폰 사진'처럼 변형: 랜덤 축소+회전+배경+위치.
+        raw 사진 분포(배경·여백·기울기·스케일)에 강건하게. img/mask 동일 기하 적용."""
+        size = self.size
+        h, w = img.shape[:2]
+        scale = np.random.uniform(0.35, 0.9) * size / max(h, w)
+        bw, bh = max(1, int(w * scale)), max(1, int(h * scale))
+        bimg = cv2.resize(img, (bw, bh), interpolation=cv2.INTER_AREA)
+        bmask = cv2.resize(mask, (bw, bh), interpolation=cv2.INTER_NEAREST)
+
+        ang = np.random.uniform(-15, 15)
+        M = cv2.getRotationMatrix2D((bw / 2, bh / 2), ang, 1.0)
+        cos, sin = abs(M[0, 0]), abs(M[0, 1])
+        nw, nh = int(bh * sin + bw * cos), int(bh * cos + bw * sin)
+        M[0, 2] += nw / 2 - bw / 2
+        M[1, 2] += nh / 2 - bh / 2
+        region = np.ones((bh, bw), np.uint8)
+        rimg = cv2.warpAffine(bimg, M, (nw, nh), flags=cv2.INTER_AREA)
+        rmask = cv2.warpAffine(bmask, M, (nw, nh), flags=cv2.INTER_NEAREST)
+        rreg = cv2.warpAffine(region, M, (nw, nh), flags=cv2.INTER_NEAREST)
+        if nw > size or nh > size:                       # 회전으로 캔버스 초과 시 축소
+            f = min(size / nw, size / nh)
+            nw, nh = max(1, int(nw * f)), max(1, int(nh * f))
+            rimg = cv2.resize(rimg, (nw, nh), interpolation=cv2.INTER_AREA)
+            rmask = cv2.resize(rmask, (nw, nh), interpolation=cv2.INTER_NEAREST)
+            rreg = cv2.resize(rreg, (nw, nh), interpolation=cv2.INTER_NEAREST)
+
+        canvas = np.full((size, size, 3), np.random.randint(0, 256, 3), np.uint8)
+        cmask = np.zeros((size, size), np.float32)
+        oy = np.random.randint(0, size - nh + 1)
+        ox = np.random.randint(0, size - nw + 1)
+        reg3 = (rreg > 0)[..., None]
+        canvas[oy:oy + nh, ox:ox + nw] = np.where(reg3, rimg, canvas[oy:oy + nh, ox:ox + nw])
+        cmask[oy:oy + nh, ox:ox + nw] = np.where(rreg > 0, rmask, cmask[oy:oy + nh, ox:ox + nw])
+        return canvas, cmask
 
     def _color_jitter(self, img):
         """밝기/대비/HSV 지터 (image만). photo<->web 색·조명 차이 흡수용."""
@@ -100,13 +135,18 @@ class TraceDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path, mask_path, label = self.samples[idx]
-        img = self._load_image(img_path)
-        mask = self._load_mask(mask_path)
+        img = self._load_image(img_path)      # native RGB
+        mask = self._load_mask(mask_path)     # native {0,1}
 
+        if self.augment and np.random.rand() < self.p_rawify:
+            img, mask = self._rawify(img, mask)              # 폰 사진 흉내
+        else:
+            img = self._letterbox(img, (0, 0, 0), cv2.INTER_AREA)
+            mask = self._letterbox(mask, 0, cv2.INTER_NEAREST)
         if self.augment:
-            img, mask = self._augment(img, mask)
+            img, mask = self._augment(img, mask)             # flips/rot90/color
 
         img = np.ascontiguousarray(img, dtype=np.float32) / 255.0
         img = torch.from_numpy(img.transpose(2, 0, 1))       # (3,H,W)
-        mask = torch.from_numpy(np.ascontiguousarray(mask))[None, ...]  # (1,H,W)
+        mask = torch.from_numpy(np.ascontiguousarray(mask, dtype=np.float32))[None, ...]
         return img, mask, label
