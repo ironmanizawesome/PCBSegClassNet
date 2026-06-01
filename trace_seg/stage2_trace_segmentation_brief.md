@@ -53,3 +53,37 @@ Arduino 보드의 광학 사진에서 구리 배선(trace)을 픽셀 단위로 �
 - "Towards PCB Netlist Extraction from Multimodal Imagery" (Balint et al., 2022) - FPN 기반 세그멘테이션 → netlist
 - Botero et al. (2021) - X-ray CT 기반 trace/copper plane 추출, 그래프 이론 활용
 - Stanford EE368 PCB Reverse Engineering - 광학 이미지 이진화 기반 접근
+
+---
+
+## Stage 2 진행 결과 (2026-06-01)
+
+위 지시서 이후 실제 수행 결과. 상세 진행 이력은 auto-memory `trace_seg_progress.md` 참조.
+
+### Step 1 (HSV 전통 CV) — 완료, 한계 정량화
+- `src/segmentation/trace_segment.py` (CLAHE + HSV 색 필터 + morphology).
+- 6보드 평가 IoU 1~15% (recall 압도적 미달 = 솔더마스크 아래 trace 미검출). 전통 색 필터의 구조적 한계 확인.
+
+### Step 2 (Gerber → GT mask) — 완료
+- `src/segmentation/gerber_to_mask.py` + `scripts/generate_gt_masks.py`. 6보드 × 양면 이진 GT mask.
+
+### 데이터셋 (사진 ↔ GT 정합 포함)
+- 직접촬영 + 공식 web(roboflow) 사진을 `scripts/organize_photos.py`로 정리 (HEIC→PNG, side/비대상 보드 제외).
+- 사진↔GT **수동 homography 정합** `scripts/register_photo.py` — 자동 보드검출은 검은 헤더가 배경과 섞여 실패 → 수동 대응점 채택.
+- 최종 **21쌍 / 6설계** (photo 9 + web 12). UNO SMD 직접촬영은 CAD 리비전 불일치 → 공식 web으로 대체. 다층/실드/어댑터 보드 제외.
+
+### Step 3 (U-Net) — PoC 검증 완료
+- `src/models/unet.py`, `src/training/{dataset,train}.py` (PyTorch, BCE+Dice, augmentation, letterbox, best-ckpt, cosine lr, grad clip).
+- **5-fold leave-one-design-out 교차검증** (`scripts/eval_unet.py`로 trivial baseline 대조):
+
+| held-out 설계 | model IoU | all-fg | mean-mask |
+|---|---|---|---|
+| NANO | 89.1% | 16.0% | 15.2% |
+| MEGA | 70.2% | 16.3% | 15.2% |
+| UNO R3 (TH) | 90.6% | 27.5% | 14.8% |
+| UNO R3 (SMD) | 90.8% | 27.4% | 17.3% |
+| Leonardo (A57+NH) | 87.6% | 23.9% | 10.3% |
+
+- **결론**: 처음 보는 Arduino 설계에서 IoU 70~91% (baseline 3~6×) → **좁은 도메인 내 일반화 확증**(순수 과적합 아님). HSV(~10%) 대비 대폭 향상.
+- **범위/한계**: 독립 설계 ~5개뿐 → 임의 PCB 전이 불가, **"Arduino 스타일 trace 추출기" PoC**로 규정. UNO TH/SMD는 형제보드라 상호 near-leakage(낙관), MEGA는 가장 복잡·distinct해 최약(70%).
+- **확장 레버**: ① 단면/양면 + CAD 보드 설계 추가 ② 합성 데이터(CAD 렌더링 + domain randomization).
